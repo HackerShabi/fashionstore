@@ -1,5 +1,21 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import app from '../../firebase';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy 
+} from 'firebase/firestore';
+
+// Initialize Firestore
+const db = getFirestore(app);
 
 // Create admin data context
 const AdminDataContext = createContext();
@@ -18,56 +34,96 @@ export const AdminDataProvider = ({ children }) => {
   const [homepageSettings, setHomepageSettings] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load data from localStorage on mount
+  // Load data from Firestore on mount
   useEffect(() => {
     const loadData = async () => {
       try {
+        setLoading(true);
+        
         // Load products
-        const storedProducts = localStorage.getItem('admin_products');
-        if (storedProducts) {
-          setProducts(JSON.parse(storedProducts));
+        const productsSnapshot = await getDocs(collection(db, 'products'));
+        const productsData = productsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        if (productsData.length > 0) {
+          setProducts(productsData);
         } else {
           // Initialize with sample data if empty
-          setProducts(generateSampleProducts());
+          const sampleProducts = generateSampleProducts();
+          await Promise.all(sampleProducts.map(product => 
+            setDoc(doc(db, 'products', product.id), product)
+          ));
+          setProducts(sampleProducts);
         }
         
         // Load categories
-        const storedCategories = localStorage.getItem('admin_categories');
-        if (storedCategories) {
-          setCategories(JSON.parse(storedCategories));
+        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+        const categoriesData = categoriesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        if (categoriesData.length > 0) {
+          setCategories(categoriesData);
         } else {
           // Initialize with sample data if empty
-          setCategories(generateSampleCategories());
+          const sampleCategories = generateSampleCategories();
+          await Promise.all(sampleCategories.map(category => 
+            setDoc(doc(db, 'categories', category.id), category)
+          ));
+          setCategories(sampleCategories);
         }
         
         // Load orders
-        const storedOrders = localStorage.getItem('admin_orders');
-        if (storedOrders) {
-          setOrders(JSON.parse(storedOrders));
+        const ordersSnapshot = await getDocs(collection(db, 'orders'));
+        const ordersData = ordersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        if (ordersData.length > 0) {
+          setOrders(ordersData);
         } else {
           // Initialize with sample data if empty
-          setOrders(generateSampleOrders());
+          const sampleOrders = generateSampleOrders();
+          await Promise.all(sampleOrders.map(order => 
+            setDoc(doc(db, 'orders', order.id), order)
+          ));
+          setOrders(sampleOrders);
         }
         
         // Load users
-        const storedUsers = localStorage.getItem('admin_users');
-        if (storedUsers) {
-          setUsers(JSON.parse(storedUsers));
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersData = usersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        if (usersData.length > 0) {
+          setUsers(usersData);
         } else {
           // Initialize with sample data if empty
-          setUsers(generateSampleUsers());
+          const sampleUsers = generateSampleUsers();
+          await Promise.all(sampleUsers.map(user => 
+            setDoc(doc(db, 'users', user.id), user)
+          ));
+          setUsers(sampleUsers);
         }
         
         // Load homepage settings
-        const storedHomepageSettings = localStorage.getItem('admin_homepage_settings');
-        if (storedHomepageSettings) {
-          setHomepageSettings(JSON.parse(storedHomepageSettings));
+        const homepageSettingsDoc = await getDoc(doc(db, 'settings', 'homepage'));
+        if (homepageSettingsDoc.exists()) {
+          setHomepageSettings(homepageSettingsDoc.data());
         } else {
           // Initialize with sample data if empty
-          setHomepageSettings(generateSampleHomepageSettings());
+          const sampleSettings = generateSampleHomepageSettings();
+          await setDoc(doc(db, 'settings', 'homepage'), sampleSettings);
+          setHomepageSettings(sampleSettings);
         }
       } catch (error) {
-        console.error('Error loading data from localStorage:', error);
+        console.error('Error loading data from Firestore:', error);
       } finally {
         setLoading(false);
       }
@@ -76,64 +132,65 @@ export const AdminDataProvider = ({ children }) => {
     loadData();
   }, []);
   
-  // Save data to localStorage whenever it changes
-  useEffect(() => {
-    if (!loading) {
-      localStorage.setItem('admin_products', JSON.stringify(products));
-    }
-  }, [products, loading]);
-  
-  useEffect(() => {
-    if (!loading) {
-      localStorage.setItem('admin_categories', JSON.stringify(categories));
-    }
-  }, [categories, loading]);
-  
-  useEffect(() => {
-    if (!loading) {
-      localStorage.setItem('admin_orders', JSON.stringify(orders));
-    }
-  }, [orders, loading]);
-  
-  useEffect(() => {
-    if (!loading) {
-      localStorage.setItem('admin_users', JSON.stringify(users));
-    }
-  }, [users, loading]);
-  
-  useEffect(() => {
-    if (!loading && homepageSettings) {
-      localStorage.setItem('admin_homepage_settings', JSON.stringify(homepageSettings));
-    }
-  }, [homepageSettings, loading]);
-  
   // Product CRUD operations
   const getProductById = (id) => {
     return products.find(product => product.id === id) || null;
   };
   
-  const addProduct = (productData) => {
-    const newProduct = {
-      ...productData,
-      id: `prod_${uuidv4()}`,
-      createdAt: new Date().toISOString()
-    };
-    
-    setProducts([...products, newProduct]);
-    return newProduct;
+  const addProduct = async (productData) => {
+    try {
+      const newProduct = {
+        ...productData,
+        id: `prod_${uuidv4()}`,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to Firestore
+      await setDoc(doc(db, 'products', newProduct.id), newProduct);
+      
+      // Update local state
+      setProducts([...products, newProduct]);
+      return newProduct;
+    } catch (error) {
+      console.error('Error adding product:', error);
+      throw error;
+    }
   };
   
-  const updateProduct = (id, productData) => {
-    const updatedProducts = products.map(product => 
-      product.id === id ? { ...product, ...productData, updatedAt: new Date().toISOString() } : product
-    );
-    
-    setProducts(updatedProducts);
+  const updateProduct = async (id, productData) => {
+    try {
+      const updatedProduct = {
+        ...productData,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await updateDoc(doc(db, 'products', id), updatedProduct);
+      
+      // Update local state
+      const updatedProducts = products.map(product => 
+        product.id === id ? { ...product, ...updatedProduct } : product
+      );
+      
+      setProducts(updatedProducts);
+    } catch (error) {
+      console.error('Error updating product:', error);
+      throw error;
+    }
   };
   
-  const deleteProduct = (id) => {
-    const updatedProducts = products.filter(product => product.id !== id);
-    setProducts(updatedProducts);
+  const deleteProduct = async (id) => {
+    try {
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'products', id));
+      
+      // Update local state
+      const updatedProducts = products.filter(product => product.id !== id);
+      setProducts(updatedProducts);
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      throw error;
+    }
   };
   
   // Category CRUD operations
@@ -141,28 +198,60 @@ export const AdminDataProvider = ({ children }) => {
     return categories.find(category => category.id === id) || null;
   };
   
-  const addCategory = (categoryData) => {
-    const newCategory = {
-      ...categoryData,
-      id: `cat_${uuidv4()}`,
-      createdAt: new Date().toISOString()
-    };
-    
-    setCategories([...categories, newCategory]);
-    return newCategory;
+  const addCategory = async (categoryData) => {
+    try {
+      const newCategory = {
+        ...categoryData,
+        id: `cat_${uuidv4()}`,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to Firestore
+      await setDoc(doc(db, 'categories', newCategory.id), newCategory);
+      
+      // Update local state
+      setCategories([...categories, newCategory]);
+      return newCategory;
+    } catch (error) {
+      console.error('Error adding category:', error);
+      throw error;
+    }
   };
   
-  const updateCategory = (id, categoryData) => {
-    const updatedCategories = categories.map(category => 
-      category.id === id ? { ...category, ...categoryData, updatedAt: new Date().toISOString() } : category
-    );
-    
-    setCategories(updatedCategories);
+  const updateCategory = async (id, categoryData) => {
+    try {
+      const updatedCategory = {
+        ...categoryData,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await updateDoc(doc(db, 'categories', id), updatedCategory);
+      
+      // Update local state
+      const updatedCategories = categories.map(category => 
+        category.id === id ? { ...category, ...updatedCategory } : category
+      );
+      
+      setCategories(updatedCategories);
+    } catch (error) {
+      console.error('Error updating category:', error);
+      throw error;
+    }
   };
   
-  const deleteCategory = (id) => {
-    const updatedCategories = categories.filter(category => category.id !== id);
-    setCategories(updatedCategories);
+  const deleteCategory = async (id) => {
+    try {
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'categories', id));
+      
+      // Update local state
+      const updatedCategories = categories.filter(category => category.id !== id);
+      setCategories(updatedCategories);
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      throw error;
+    }
   };
   
   // Order operations
@@ -170,12 +259,26 @@ export const AdminDataProvider = ({ children }) => {
     return orders.find(order => order.id === id) || null;
   };
   
-  const updateOrderStatus = (id, status) => {
-    const updatedOrders = orders.map(order => 
-      order.id === id ? { ...order, status, updatedAt: new Date().toISOString() } : order
-    );
-    
-    setOrders(updatedOrders);
+  const updateOrderStatus = async (id, status) => {
+    try {
+      const updateData = {
+        status,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await updateDoc(doc(db, 'orders', id), updateData);
+      
+      // Update local state
+      const updatedOrders = orders.map(order => 
+        order.id === id ? { ...order, ...updateData } : order
+      );
+      
+      setOrders(updatedOrders);
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      throw error;
+    }
   };
   
   // User operations
@@ -183,31 +286,68 @@ export const AdminDataProvider = ({ children }) => {
     return users.find(user => user.id === id) || null;
   };
   
-  const updateUserStatus = (id, isActive) => {
-    const updatedUsers = users.map(user => 
-      user.id === id ? { ...user, isActive, updatedAt: new Date().toISOString() } : user
-    );
-    
-    setUsers(updatedUsers);
+  const updateUserStatus = async (id, isActive) => {
+    try {
+      const updateData = {
+        isActive,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await updateDoc(doc(db, 'users', id), updateData);
+      
+      // Update local state
+      const updatedUsers = users.map(user => 
+        user.id === id ? { ...user, ...updateData } : user
+      );
+      
+      setUsers(updatedUsers);
+    } catch (error) {
+      console.error('Error updating user status:', error);
+      throw error;
+    }
   };
   
-  const updateUser = (id, userData) => {
-    const updatedUsers = users.map(user => 
-      user.id === id ? { ...user, ...userData, updatedAt: new Date().toISOString() } : user
-    );
-    
-    setUsers(updatedUsers);
+  const updateUser = async (id, userData) => {
+    try {
+      const updateData = {
+        ...userData,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await updateDoc(doc(db, 'users', id), updateData);
+      
+      // Update local state
+      const updatedUsers = users.map(user => 
+        user.id === id ? { ...user, ...updateData } : user
+      );
+      
+      setUsers(updatedUsers);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      throw error;
+    }
   };
   
   // Homepage settings operations
-  const updateHomepageSettings = (settingsData) => {
-    const updatedSettings = {
-      ...homepageSettings,
-      ...settingsData,
-      updatedAt: new Date().toISOString()
-    };
-    
-    setHomepageSettings(updatedSettings);
+  const updateHomepageSettings = async (settingsData) => {
+    try {
+      const updatedSettings = {
+        ...homepageSettings,
+        ...settingsData,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Update in Firestore
+      await setDoc(doc(db, 'settings', 'homepage'), updatedSettings);
+      
+      // Update local state
+      setHomepageSettings(updatedSettings);
+    } catch (error) {
+      console.error('Error updating homepage settings:', error);
+      throw error;
+    }
   };
   
   // Analytics data
@@ -512,25 +652,25 @@ export const AdminDataProvider = ({ children }) => {
     return [
       {
         id: 'user_1',
-        name: 'Admin User',
-        email: 'admin@example.com',
-        role: 'admin',
+        name: 'John Doe',
+        email: 'john@example.com',
+        role: 'customer',
         isActive: true,
         createdAt: new Date().toISOString()
       },
       {
         id: 'user_2',
-        name: 'John Doe',
-        email: 'john@example.com',
-        role: 'user',
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        role: 'customer',
         isActive: true,
         createdAt: new Date(Date.now() - 86400000).toISOString()
       },
       {
         id: 'user_3',
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        role: 'user',
+        name: 'Admin User',
+        email: 'admin@example.com',
+        role: 'admin',
         isActive: true,
         createdAt: new Date(Date.now() - 172800000).toISOString()
       }
@@ -539,29 +679,48 @@ export const AdminDataProvider = ({ children }) => {
   
   const generateSampleHomepageSettings = () => {
     return {
-      heroTitle: 'Summer Collection',
-      heroSubtitle: 'Discover our latest summer styles with up to 50% off',
-      heroImage: '/assets/products/hero.jpg',
-      featuredCategories: ['cat_1', 'cat_2', 'cat_3'],
-      featuredProducts: ['prod_1', 'prod_2', 'prod_3'],
-      promoTitle: 'New Arrivals',
-      promoSubtitle: 'Check out our latest products just for you',
-      promoImage: '/assets/products/promo.jpg',
-      promoLink: '/shop/new-arrivals',
+      id: 'homepage',
+      hero: {
+        title: 'Summer Collection 2023',
+        subtitle: 'New arrivals with express shipping',
+        buttonText: 'Shop Now',
+        buttonLink: '/shop',
+        image: '/assets/placeholder.txt'
+      },
+      featuredCategories: [
+        { id: 'cat_1', name: 'Tops', image: '/assets/categories/tops.jpg' },
+        { id: 'cat_2', name: 'Bottoms', image: '/assets/categories/bottoms.jpg' },
+        { id: 'cat_3', name: 'Dresses', image: '/assets/categories/dresses.jpg' }
+      ],
+      promoBanner: {
+        title: 'Special Offer',
+        subtitle: 'Get 20% off on all summer items',
+        buttonText: 'Shop Sale',
+        buttonLink: '/shop?sale=true',
+        image: '/assets/placeholder.txt',
+        backgroundColor: '#f8f9fa'
+      },
       testimonials: [
         {
           id: 'testimonial_1',
           name: 'Sarah Johnson',
-          role: 'Regular Customer',
-          comment: 'I love the quality of the clothes. They last forever and always look great!',
-          image: '/assets/testimonials/person1.jpg'
+          text: 'I love the quality of the clothes. Will definitely shop here again!',
+          rating: 5,
+          image: '/assets/testimonials/placeholder.txt'
         },
         {
           id: 'testimonial_2',
-          name: 'Mike Thompson',
-          role: 'Fashion Enthusiast',
-          comment: 'The styles are always on trend and the prices are reasonable. My go-to shop!',
-          image: '/assets/testimonials/person2.jpg'
+          name: 'Mike Brown',
+          text: 'Fast shipping and great customer service. Highly recommended!',
+          rating: 5,
+          image: '/assets/testimonials/placeholder.txt'
+        },
+        {
+          id: 'testimonial_3',
+          name: 'Emily Davis',
+          text: 'The fit is perfect and the material is so comfortable.',
+          rating: 4,
+          image: '/assets/testimonials/placeholder.txt'
         }
       ],
       createdAt: new Date().toISOString()

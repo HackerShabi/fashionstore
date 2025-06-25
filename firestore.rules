@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow admin users to read and write all documents
+    match /{document=**} {
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Public read access for products and categories
+    match /products/{productId} {
+      allow read: if true;
+    }
+    
+    match /categories/{categoryId} {
+      allow read: if true;
+    }
+    
+    // Allow users to read their own data
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow users to create orders
+    match /orders/{orderId} {
+      allow create: if request.auth != null && 
+        request.resource.data.customer.email == request.auth.token.email;
+      allow read: if request.auth != null && 
+        resource.data.customer.email == request.auth.token.email;
+    }
+    
+    // Allow public read access to homepage settings
+    match /settings/homepage {
+      allow read: if true;
+    }
+  }
+} 

@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow admin users to read and write all files
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Allow public read access to product and category images
+    match /products/{fileName} {
+      allow read: if true;
+    }
+    
+    match /categories/{fileName} {
+      allow read: if true;
+    }
+    
+    // Allow public read access to other public assets
+    match /assets/{fileName} {
+      allow read: if true;
+    }
+  }
+} 

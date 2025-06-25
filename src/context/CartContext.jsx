@@ -1,4 +1,20 @@
-import React, { createContext, useContext, useReducer, useEffect } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useState } from "react";
+import app from '../firebase';
+import { 
+  getAuth, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc 
+} from 'firebase/firestore';
+
+// Initialize Firebase
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 // Initial state
 const initialState = {
@@ -84,6 +100,11 @@ const cartReducer = (state, action) => {
 
     case "CLEAR_CART":
       return initialState;
+      
+    case "LOAD_CART":
+      return {
+        ...action.payload
+      };
 
     default:
       return state;
@@ -104,7 +125,10 @@ export const useCart = () => {
 
 // Cart provider component
 export const CartProvider = ({ children }) => {
-  // Load cart from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Load cart from localStorage or Firestore
   const loadCartFromStorage = () => {
     if (typeof window !== "undefined") {
       const savedCart = localStorage.getItem("cart");
@@ -115,12 +139,58 @@ export const CartProvider = ({ children }) => {
 
   const [state, dispatch] = useReducer(cartReducer, initialState, loadCartFromStorage);
 
-  // Save cart to localStorage whenever it changes
+  // Listen for auth state changes
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setLoading(false);
+      
+      // If user logs in, fetch their cart from Firestore
+      if (user) {
+        fetchUserCart(user.uid);
+      }
+    });
+    
+    return unsubscribe;
+  }, []);
+
+  // Fetch user's cart from Firestore
+  const fetchUserCart = async (userId) => {
+    try {
+      const cartDoc = await getDoc(doc(db, 'carts', userId));
+      
+      if (cartDoc.exists()) {
+        // If user has a cart in Firestore, load it
+        dispatch({ type: 'LOAD_CART', payload: cartDoc.data() });
+      } else if (state.items.length > 0) {
+        // If user doesn't have a cart but has items in localStorage, save those to Firestore
+        await setDoc(doc(db, 'carts', userId), state);
+      }
+    } catch (error) {
+      console.error('Error fetching user cart:', error);
+    }
+  };
+
+  // Save cart to localStorage or Firestore
+  useEffect(() => {
+    if (loading) return;
+    
+    if (currentUser) {
+      // Save to Firestore for logged in users
+      const saveToFirestore = async () => {
+        try {
+          await setDoc(doc(db, 'carts', currentUser.uid), state);
+        } catch (error) {
+          console.error('Error saving cart to Firestore:', error);
+        }
+      };
+      
+      saveToFirestore();
+    } else if (typeof window !== "undefined") {
+      // Save to localStorage for guests
       localStorage.setItem("cart", JSON.stringify(state));
     }
-  }, [state]);
+  }, [state, currentUser, loading]);
 
   // Cart actions
   const addItem = (item) => dispatch({ type: "ADD_ITEM", payload: item });
@@ -137,6 +207,7 @@ export const CartProvider = ({ children }) => {
     updateQuantity,
     applyDiscount,
     clearCart,
+    isAuthenticated: !!currentUser
   };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
